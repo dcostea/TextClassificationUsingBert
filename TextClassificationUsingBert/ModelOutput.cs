@@ -1,19 +1,12 @@
 ﻿using Microsoft.ML.Data;
 
+namespace TextClassificationUsingBert.Models;
+
 public class ModelOutput
 {
     [ColumnName(@"PredictedLabel")]
-    public string PredictedLabel { get; set; }
+    public string? PredictedLabel { get; set; }
 
     [ColumnName(@"Score")]
-    public float[] Score { get; set; }
-}
-
-public class ModelIntermediary
-{
-    [ColumnName(@"Content")]
-    public string Content { get; set; }
-
-    [ColumnName(@"WordsWithoutDefaultStopWords")]
-    public string[] WordsWithoutDefaultStopWords { get; set; }
+    public float[]? Score { get; set; }
 }

@@ -2,13 +2,11 @@
 
 namespace TextClassificationUsingBert.Models;
 
-public class ModelInput
+public class ModelIntermediary
 {
-    [LoadColumn(0)]
     [ColumnName(@"Content")]
     public string? Content { get; set; }
 
-    [LoadColumn(1)]
-    [ColumnName(@"Label")]
-    public string? Label { get; set; }
+    [ColumnName(@"WordsWithoutDefaultStopWords")]
+    public string[]? WordsWithoutDefaultStopWords { get; set; }
 }

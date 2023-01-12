@@ -4,7 +4,7 @@ using Microsoft.ML.TorchSharp;
 using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
 using System.Data;
-
+using TextClassificationUsingBert.Models;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
@@ -13,7 +13,8 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}", theme: SystemConsoleTheme.Colored)
     .CreateLogger();
 
-// Initialize MLContext
+const string ModelName = "subjects.zip";
+
 MLContext mlContext = new()
 {
     GpuDeviceId = 0,
@@ -22,13 +23,13 @@ MLContext mlContext = new()
 
 mlContext.Log += (_, e) =>
 {
-    if (e.Source.StartsWith("TextClassificationTrainer"))
+    if (e.Source.StartsWith("TextClassificationTrainer") || e.Source.StartsWith("NasBertTrainer"))
     {
         Log.Debug(e.Message);
     }
 };
 
-// Load the data source
+// Load the dataset
 Log.Information("Loading data...");
 IDataView dataView = mlContext.Data.LoadFromTextFile<ModelInput>(
     //"subjects-questions-10k.tsv",
@@ -36,12 +37,7 @@ IDataView dataView = mlContext.Data.LoadFromTextFile<ModelInput>(
     hasHeader: true,
     separatorChar: '\t'
 );
-
-/** MODEL TRAINING ****************************************************************************/
-
-// To evaluate the effectiveness of machine learning models we split them into a training set for fitting
-// and a testing set to evaluate that trained model against unknown data
-DataOperationsCatalog.TrainTestData dataSplit = mlContext.Data.TrainTestSplit(dataView, testFraction: 0.2, seed: 1234);
+DataOperationsCatalog.TrainTestData dataSplit = mlContext.Data.TrainTestSplit(dataView, testFraction: 0.2, seed: 2023);
 IDataView trainData = dataSplit.TrainSet;
 IDataView testData = dataSplit.TestSet;
 
@@ -50,16 +46,13 @@ IDataView testData = dataSplit.TestSet;
 ////    .Append(mlContext.Transforms.Text.TokenizeIntoWords("WordsWithoutDefaultStopWords"));
 
 ////var emptySamples = new List<ModelInput>();
-////// Convert sample list to an empty IDataView.
 ////var emptyDataView = mlContext.Data.LoadFromEnumerable(emptySamples);
 
-////// Fit to data.
 ////var textTransformer = textPipeline.Fit(emptyDataView);
 
 ////var predictions = textTransformer.Transform(trainData);
 ////var outputData = mlContext.Data.CreateEnumerable<ModelIntermediary>(predictions, false);
 ////var processedData = outputData.Select(d => string.Join(" ", d.WordsWithoutDefaultStopWords));
-
 
 // Create a pipeline for training the model
 var pipeline = mlContext.Transforms.Conversion.MapValueToKey(
@@ -72,53 +65,44 @@ var pipeline = mlContext.Transforms.Conversion.MapValueToKey(
         outputColumnName: @"PredictedLabel", 
         inputColumnName: @"PredictedLabel"));
 
-// Train the model using the pipeline
 Log.Information("Training model...");
 ////ITransformer model = pipeline.Fit(trainData);
 ////var processedTrainData = mlContext.Data.LoadFromEnumerable(processedData);
+Log.Information("Model training is complete.");
 
-ITransformer model = pipeline.Fit(trainData);
-mlContext.Model.Save(model, trainData.Schema, "subjects.zip");
-////var model = mlContext.Model.Load("subjects.zip", out var _);
-//new string[] { "A)", "B)", "C)", "D)" }
-/** MODEL EVALUATION **************************************************************************/
+//ITransformer model = pipeline.Fit(trainData);
+//mlContext.Model.Save(model, trainData.Schema, ModelName);
+//Log.Information($"Model {ModelName} is saved.");
+var model = mlContext.Model.Load(ModelName, out var _);
 
-// Evaluate the model's performance against the TEST data set
-Log.Information("Evaluating model performance...");
+////Log.Information("Evaluating model performance...");
 
-// We need to apply the same transformations to our test set so it can be evaluated via the resulting model
-IDataView transformedTest = model.Transform(testData);
-MulticlassClassificationMetrics metrics = mlContext.MulticlassClassification.Evaluate(transformedTest);
+////// We need to apply the same transformations to our test set so it can be evaluated via the resulting model
+////IDataView transformedTest = model.Transform(testData);
+////MulticlassClassificationMetrics metrics = mlContext.MulticlassClassification.Evaluate(transformedTest);
 
-// Display Metrics
-Log.Information($"Macro Accuracy: {metrics.MacroAccuracy}");
-Log.Information($"Micro Accuracy: {metrics.MicroAccuracy}");
-Log.Information($"Log Loss: {metrics.LogLoss}");
-Log.Information(metrics.ConfusionMatrix.GetFormattedConfusionTable());
-
-/** PREDICTION GENERATION *********************************************************************/
+////// Display Metrics
+////Log.Information($"Macro Accuracy: {metrics.MacroAccuracy}");
+////Log.Information($"Micro Accuracy: {metrics.MicroAccuracy}");
+////Log.Information($"Log Loss: {metrics.LogLoss}");
+////Log.Information(metrics.ConfusionMatrix.GetFormattedConfusionTable());
 
 // Generate a prediction engine
-Log.Information("Creating prediction engine...");
 PredictionEngine<ModelInput, ModelOutput> engine = mlContext.Model.CreatePredictionEngine<ModelInput, ModelOutput>(model);
 
-Console.WriteLine("Ready to generate predictions.");
+Console.WriteLine("Evaluation is complete.");
 
-// Generate a series of predictions based on user input
-string input;
+string content;
 do
 {
     Console.WriteLine();
-    Console.WriteLine("What subjet do you have? (Type Q to Quit)");
-    input = Console.ReadLine()!;
+    Console.WriteLine("Give me some content to predict... (type 'Q' or 'q' to exit)");
+    content = Console.ReadLine()!;
 
-    // Get a prediction
-    ModelInput sampleData = new(input);
+    ModelInput sampleData = new() { Content = content };
     ModelOutput result = engine.Predict(sampleData);
 
-    // Print classification
-    //float maxScore = result.Score[(uint)result.PredictedLabel];
-    Console.WriteLine($"Matched intent {result.PredictedLabel} with score of {result.Score.Select(s => Math.Abs(s)).Max()}");
+    Console.WriteLine($"Matched {result.PredictedLabel} with score of {result.Score!.Select(Math.Abs).Max()}");
     Console.WriteLine();
 }
-while (!string.IsNullOrWhiteSpace(input) && input.ToLowerInvariant() != "q");
+while (!string.IsNullOrWhiteSpace(content) && content.Equals("Q", StringComparison.InvariantCultureIgnoreCase));
